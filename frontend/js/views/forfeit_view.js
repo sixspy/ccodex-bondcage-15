@@ -1,7 +1,11 @@
 export const forfeitViewTemplate = `
 <section class="panel">
   <h2>罚没册</h2>
-  <p class="hint">仅核验违约的笼可罚没。资金离开当事人账户，进入罚没册，不再回到可用余额。</p>
+  <p class="hint">
+    仅核验违约的笼可罚没。违约出金门闸（纪要 {{ gateMeta.locked_at || '2026-11-22' }} 锁死 ·
+    {{ gateMeta.basis || '甲路径·状态门闸拒写零增' }}）：违约态只允许罚没方向出金；
+    部分罚没后可继续罚尾款，直到出清；同一笼代已有拨付则禁止罚没。
+  </p>
   <div class="grid-2">
     <div>
       <div class="form-row">
@@ -9,7 +13,7 @@ export const forfeitViewTemplate = `
           <label>违约态笼</label>
           <select v-model.number="forfeitForm.cage_id">
             <option :value="0">请选择</option>
-            <option v-for="c in failCages" :key="c.id" :value="c.id">
+            <option v-for="c in forfeitableCages" :key="c.id" :value="c.id">
               {{ c.cage_code }} · 可用 {{ fmt(c.available) }}
             </option>
           </select>
@@ -25,6 +29,27 @@ export const forfeitViewTemplate = `
       </div>
       <div class="actions">
         <button class="danger" @click="doForfeit">执行罚没</button>
+      </div>
+      <div v-if="forfeitForm.cage_id" class="gate-note">
+        <span class="badge fail">门闸限定罚没方向</span>
+        {{ (gateOf(forfeitForm.cage_id) || {}).reason || '违约态：只允许罚没出金' }}
+      </div>
+      <div class="gate-block">
+        <h3>违约笼出金方向（五页同源）</h3>
+        <table>
+          <thead><tr><th>笼</th><th>状态</th><th>可用</th><th>出金方向</th></tr></thead>
+          <tbody>
+            <tr v-for="g in breachGates" :key="'fg-'+g.cage_id">
+              <td>{{ g.cage_code }}</td>
+              <td><span class="badge fail">{{ g.status }}</span></td>
+              <td>{{ fmt(g.available) }}</td>
+              <td><span class="badge fail">{{ g.outflow }}</span></td>
+            </tr>
+            <tr v-if="!breachGates.length">
+              <td colspan="4" class="hint">暂无违约笼</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
     <div>

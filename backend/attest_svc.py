@@ -1,10 +1,17 @@
-"""履约核验：通过后允许解笼；违约后允许罚没。"""
+"""履约核验：通过后允许解笼；违约后只允许罚没方向出金。
+
+违约出金门闸（纪要 2026-11-22 锁死，甲路径）：
+- 同笼代已有违约结论时，禁止再写通过结论（不得改口翻案）；
+- 写违约结论时同步笼状态，避免状态停在通过态造成假绿；
+- 弃用乙路径改道，携带乙口径的请求记偏航并拒写。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
+from gate import breach_gate, write_reject_audit
 from locks import release, require_lock
 from models import AttestIn
 
@@ -45,15 +52,28 @@ def create_attestation(body: AttestIn, authorization: AuthHeader = None):
             if float(cage["available"]) <= 0:
                 raise HTTPException(409, "笼可用额为 0，禁止核验")
             # 同一笼代只允许一条有效核验结论
+            gen = int(cage["generation"])
             prior = conn.execute(
-                """SELECT id FROM attestations
+                """SELECT outcome FROM attestations
                    WHERE cage_id=? AND attest_gen=? AND outcome IN ('通过','违约')""",
-                (body.cage_id, int(cage["generation"])),
-            ).fetchone()
+                (body.cage_id, gen),
+            ).fetchall()
             if prior:
                 raise HTTPException(409, "本笼代已有核验结论，禁止改口")
+            if body.outcome == "通过":
+                gate = breach_gate(conn, cage)
+                if gate["breach"]:
+                    write_reject_audit(
+                        conn,
+                        write_audit,
+                        user,
+                        cage,
+                        "gate_deviation",
+                        {"path": "attest", "attempt": "通过", "gate": gate},
+                    )
+                    conn.commit()
+                    raise HTTPException(409, "违约出金门闸：违约态不得改判通过")
             now = now_iso()
-            gen = int(cage["generation"])
             cur = conn.execute(
                 """INSERT INTO attestations(cage_id,outcome,evidence,attest_gen,officer,created_at)
                    VALUES (?,?,?,?,?,?)""",

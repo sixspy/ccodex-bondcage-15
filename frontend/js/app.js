@@ -40,6 +40,9 @@ createApp({
     const partyProof = ref(null);
     const proofParty = ref("P-EAST");
     const audits = ref([]);
+    const gateRows = ref([]);
+    const gateMeta = ref({});
+    const gateEvents = ref([]);
     const contention = ref([]);
     const locks = ref([]);
     const dash = ref({});
@@ -131,16 +134,36 @@ createApp({
     const frozenCages = computed(() =>
       cages.value.filter((c) => c.status === "已冻结")
     );
-    const passCages = computed(() =>
+    // 五页同源：违约出金门闸只读面
+    const gateByCage = computed(() => {
+      const map = {};
+      for (const g of gateRows.value) map[g.cage_id] = g;
+      return map;
+    });
+    function gateOf(cageId) {
+      return gateByCage.value[cageId] || null;
+    }
+    function isBreachCage(c) {
+      const g = gateOf(c.id);
+      return g ? g.breach : false;
+    }
+    // 解笼页只列门闸未判违约的笼；违约笼即使状态串误停在通过态也不放行
+    const releasableCages = computed(() =>
       cages.value.filter(
-        (c) => c.status === "核验通过" || c.status === "部分解笼"
+        (c) =>
+          (c.status === "核验通过" ||
+            c.status === "部分解笼" ||
+            c.status === "核验违约" ||
+            c.status === "部分罚没") &&
+          !isBreachCage(c)
       )
     );
-    const failCages = computed(() =>
-      cages.value.filter(
-        (c) => c.status === "核验违约" || c.status === "部分罚没"
-      )
+    // 罚没页只列门闸判违约且仍有可用额的笼
+    const forfeitableCages = computed(() =>
+      cages.value.filter((c) => isBreachCage(c) && Number(c.available) > 0)
     );
+    // 门闸拦截清单：解笼/罚没/核验/对账/审计五页共用
+    const breachGates = computed(() => gateRows.value.filter((g) => g.breach));
 
     async function login() {
       err.value = "";
@@ -195,6 +218,8 @@ createApp({
           lk,
           tj,
           sj,
+          go,
+          ge,
         ] = await Promise.all([
           api.bonds(),
           api.cages(),
@@ -207,6 +232,8 @@ createApp({
           api.locks(),
           api.topupJobs(),
           api.splitJobs(),
+          api.gateOutflow(),
+          api.auditGate(),
         ]);
         bonds.value = b.items || [];
         cages.value = c.items || [];
@@ -219,14 +246,17 @@ createApp({
         locks.value = lk.items || [];
         topupJobs.value = tj.items || [];
         splitJobs.value = sj.items || [];
+        gateRows.value = go.items || [];
+        gateMeta.value = go.meta || {};
+        gateEvents.value = ge.items || [];
         if (!attestForm.value.cage_id && frozenCages.value.length) {
           attestForm.value.cage_id = frozenCages.value[0].id;
         }
-        if (!releaseForm.value.cage_id && passCages.value.length) {
-          releaseForm.value.cage_id = passCages.value[0].id;
+        if (!releaseForm.value.cage_id && releasableCages.value.length) {
+          releaseForm.value.cage_id = releasableCages.value[0].id;
         }
-        if (!forfeitForm.value.cage_id && failCages.value.length) {
-          forfeitForm.value.cage_id = failCages.value[0].id;
+        if (!forfeitForm.value.cage_id && forfeitableCages.value.length) {
+          forfeitForm.value.cage_id = forfeitableCages.value[0].id;
         }
         if (!topupForm.value.cage_id && cages.value.length) {
           topupForm.value.cage_id = cages.value[0].id;
@@ -425,9 +455,15 @@ createApp({
       forfeitForm,
       topupForm,
       splitForm,
+      gateRows,
+      gateMeta,
+      gateEvents,
+      gateOf,
+      isBreachCage,
+      releasableCages,
+      forfeitableCages,
+      breachGates,
       frozenCages,
-      passCages,
-      failCages,
       login,
       logout,
       refresh,

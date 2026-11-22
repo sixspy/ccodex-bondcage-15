@@ -50,10 +50,13 @@ export function createApi(getToken, onUnauthorized) {
     forfeits: () => req("/api/forfeits"),
     forfeit: (data) =>
       req("/api/forfeits", { method: "POST", body: JSON.stringify(data) }),
+    gateOutflow: (cageId) =>
+      req(cageId ? `/api/gate/outflow?cage_id=${cageId}` : "/api/gate/outflow"),
     reconcile: () => req("/api/reconcile"),
     reconcileOne: (code) => req(`/api/reconcile/${encodeURIComponent(code)}`),
     proof: (party) => req(`/api/proof/${encodeURIComponent(party)}`),
     audit: () => req("/api/audit?limit=120"),
+    auditGate: () => req("/api/audit/gate"),
     contention: () => req("/api/contention"),
     locks: () => req("/api/locks"),
     dashboard: () => req("/api/dashboard"),

@@ -1,4 +1,8 @@
-"""笼锁与争用登记（公共并发面）。"""
+"""笼锁与争用登记（公共并发面）。
+
+争用痕必须独立落盘：后到者的业务事务会回滚，争用痕不得随之消失。
+持锁也须立即提交，后到者才能快速看到持有者，而不是被写事务阻塞。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -15,24 +19,41 @@ class LockIn(BaseModel):
     action: str = "acquire"
 
 
-def try_acquire(conn, lock_key: str, holder: str) -> bool:
-    now = now_iso()
-    row = conn.execute(
-        "SELECT holder FROM cage_locks WHERE lock_key=?", (lock_key,)
-    ).fetchone()
-    if row is None:
-        conn.execute(
-            "INSERT INTO cage_locks(lock_key,holder,acquired_at) VALUES (?,?,?)",
-            (lock_key, holder, now),
+def _record_contention(lock_key: str, holder: str, held_by: str) -> None:
+    """用独立连接立即提交争用痕，业务回滚不得抹掉。"""
+    with connect() as side:
+        side.execute(
+            """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
+               VALUES (?,?,?,?,?)""",
+            (lock_key, holder, "争用", f"持有者={held_by}", now_iso()),
         )
-        return True
-    if row["holder"] == holder:
-        return True
-    conn.execute(
-        """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
-           VALUES (?,?,?,?,?)""",
-        (lock_key, holder, "争用", f"持有者={row['holder']}", now),
-    )
+        side.commit()
+
+
+def try_acquire(conn, lock_key: str, holder: str) -> bool:
+    """原子抢锁；失败只写争用痕。
+
+    锁与争用痕走独立连接：持锁立即提交，后到者才能看到持有者；
+    争用痕独立提交，业务事务回滚也不得抹掉。
+    """
+    with connect() as side:
+        # INSERT OR IGNORE 判 rowcount：并发下只有一人能插入成功
+        cur = side.execute(
+            """INSERT OR IGNORE INTO cage_locks(lock_key,holder,acquired_at)
+               VALUES (?,?,?)""",
+            (lock_key, holder, now_iso()),
+        )
+        won = cur.rowcount == 1
+        side.commit()
+        if won:
+            return True
+        row = side.execute(
+            "SELECT holder FROM cage_locks WHERE lock_key=?", (lock_key,)
+        ).fetchone()
+        if row is not None and row["holder"] == holder:
+            return True
+        held_by = row["holder"] if row else "-"
+    _record_contention(lock_key, holder, held_by)
     return False
 
 

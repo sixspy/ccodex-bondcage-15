@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
 from db import connect
+from gate import breach_gate
 
 router = APIRouter(tags=["reconcile"])
 
@@ -44,6 +45,7 @@ def _reconcile_cage(conn, cage) -> dict:
         "contract_no": cage["contract_no"],
         "generation": gen,
         "status": cage["status"],
+        "gate": breach_gate(conn, cage),
         "amount": amount,
         "available": available,
         "released": float(released),

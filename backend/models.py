@@ -34,12 +34,15 @@ class ReleaseIn(BaseModel):
     cage_id: int
     amount: float | None = None
     payee: str | None = None
+    # 纪要锁定甲路径；显式携带乙路径（影子罚没改道）一律记偏航并拒写
+    mode: str | None = None
 
 
 class ForfeitIn(BaseModel):
     cage_id: int
     amount: float | None = None
     reason: str = "履约违约"
+    mode: str | None = None
 
 
 class TopupIn(BaseModel):

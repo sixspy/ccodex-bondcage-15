@@ -361,3 +361,22 @@ th {
   margin-bottom: 12px;
   font-size: 13px;
 }
+
+.gate-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1.5px dashed var(--stamp);
+  background: #fff7ed;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.gate-block {
+  margin-top: 14px;
+  border-top: 1px dashed var(--line, #d6d3d1);
+  padding-top: 10px;
+}
+.gate-block h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+  color: var(--bad);
+}
